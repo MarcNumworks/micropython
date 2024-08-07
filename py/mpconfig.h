@@ -668,6 +668,11 @@
 #define MICROPY_TRACKED_ALLOC (0)
 #endif
 
+// Whether to check if large sequences will overflow the pointer size
+#ifndef MICROPY_HEAP_OVERFLOW_CHECKS
+#define MICROPY_HEAP_OVERFLOW_CHECKS (1)
+#endif
+
 // Whether to enable finalisers in the garbage collector (ie call __del__)
 #ifndef MICROPY_ENABLE_FINALISER
 #define MICROPY_ENABLE_FINALISER (MICROPY_CONFIG_ROM_LEVEL_AT_LEAST_EXTRA_FEATURES)

@@ -595,3 +595,21 @@ bool mp_get_buffer(mp_obj_t obj, mp_buffer_info_t *bufinfo, mp_uint_t flags) {
     }
     return false;
 }
+
+#if MICROPY_HEAP_OVERFLOW_CHECKS
+size_t mp_checked_mul(size_t a, size_t b) {
+    size_t res;
+    if (mp_mul_overflow(a, b, &res)) {
+        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("multiplication overflow"));
+    }
+    return res;
+}
+
+size_t mp_checked_add(size_t a, size_t b) {
+    size_t res = a + b;
+    if (res < a || res < b) {
+        mp_raise_msg(&mp_type_OverflowError, MP_ERROR_TEXT("multiplication overflow"));
+    }
+    return res;
+}
+#endif
