@@ -67,32 +67,52 @@ typedef unsigned int uint;
 #define MP_CEIL_DIVIDE(a, b) (((a) + (b) - 1) / (b))
 #define MP_ROUND_DIVIDE(a, b) (((a) + (b) / 2) / (b))
 
+#ifdef _MSC_VER
+static inline bool mp_mul_overflow(size_t a, size_t b, size_t *res) {
+    // TODO what if size_t is uint64_t
+    uint64_t ab = (uint64_t)a * (uint64_t)b;
+    *res = ab;
+    return ab > UINT32_MAX;
+}
+#else
+static inline bool mp_mul_overflow(size_t a, size_t b, size_t *res) {
+    return __builtin_mul_overflow(a, b, res);
+}
+#endif
+
+#if MICROPY_HEAP_OVERFLOW_CHECKS
+size_t mp_checked_mul(size_t a, size_t b);
+size_t mp_checked_add(size_t a, size_t b);
+#else
+static inline size_t mp_checked_mul(size_t a, size_t b) {
+    return a * b;
+}
+static inline size_t mp_checked_add(size_t a, size_t b) {
+    return a + b;
+}
+#endif
+
+
 /** memory allocation ******************************************/
-
-
-// Ensure that m_new does not overflow the multiplication when computing sizeof(type) * num.
-#define CAPPED_SIZE_NUM_OBJ(type, num) ((sizeof(type) * (num)) / sizeof(type) != (size_t)(num) ? SIZE_MAX : sizeof(type) * (num))
-// Ensure that the multiplication and the addition do not overflow.
-#define CAPPED_SIZE_OBJ_NUM_VAR(obj_type, var_type, var_num) ((sizeof(var_type) * (var_num)) / sizeof(var_type) != (size_t)(var_num) || sizeof(obj_type) + sizeof(var_type) * (var_num) < sizeof(var_type) * (var_num) ? SIZE_MAX : sizeof(obj_type) + sizeof(var_type) * (var_num))
 
 // TODO make a lazy m_renew that can increase by a smaller amount than requested (but by at least 1 more element)
 
-#define m_new(type, num) ((type *)(m_malloc(CAPPED_SIZE_NUM_OBJ(type, num))))
-#define m_new_maybe(type, num) ((type *)(m_malloc_maybe(CAPPED_SIZE_NUM_OBJ(type, num))))
-#define m_new0(type, num) ((type *)(m_malloc0(CAPPED_SIZE_NUM_OBJ(type, num))))
+#define m_new(type, num) ((type *)(m_malloc(mp_checked_mul(sizeof(type), num))))
+#define m_new_maybe(type, num) ((type *)(m_malloc_maybe(mp_checked_mul(sizeof(type), num))))
+#define m_new0(type, num) ((type *)(m_malloc0(mp_checked_mul(sizeof(type), num))))
 #define m_new_obj(type) (m_new(type, 1))
 #define m_new_obj_maybe(type) (m_new_maybe(type, 1))
-#define m_new_obj_var(obj_type, var_field, var_type, var_num) ((obj_type *)m_malloc(CAPPED_SIZE_OBJ_NUM_VAR(offsetof(obj_type, var_field), var_type, var_num)))
-#define m_new_obj_var0(obj_type, var_field, var_type, var_num) ((obj_type *)m_malloc0(CAPPED_SIZE_OBJ_NUM_VAR(offsetof(obj_type, var_field), var_type, var_num)))
-#define m_new_obj_var_maybe(obj_type, var_field, var_type, var_num) ((obj_type *)m_malloc_maybe(CAPPED_SIZE_OBJ_NUM_VAR(offsetof(obj_type, var_field), var_type, var_num)))
+#define m_new_obj_var(obj_type, var_field, var_type, var_num) ((obj_type *)m_malloc(mp_checked_add(offsetof(obj_type, var_field), mp_checked_mul(sizeof(var_type), var_num))))
+#define m_new_obj_var0(obj_type, var_field, var_type, var_num) ((obj_type *)m_malloc0(mp_checked_add(offsetof(obj_type, var_field), mp_checked_mul(sizeof(var_type), var_num))))
+#define m_new_obj_var_maybe(obj_type, var_field, var_type, var_num) ((obj_type *)m_malloc_maybe(mp_checked_add(offsetof(obj_type, var_field), mp_checked_mul(sizeof(var_type), var_num))))
 #if MICROPY_MALLOC_USES_ALLOCATED_SIZE
-#define m_renew(type, ptr, old_num, new_num) ((type *)(m_realloc((ptr), CAPPED_SIZE_NUM_OBJ(type, old_num), CAPPED_SIZE_NUM_OBJ(type, new_num))))
-#define m_renew_maybe(type, ptr, old_num, new_num, allow_move) ((type *)(m_realloc_maybe((ptr), CAPPED_SIZE_NUM_OBJ(type, old_num), CAPPED_SIZE_NUM_OBJ(type, new_num), (allow_move))))
-#define m_del(type, ptr, num) m_free(ptr,  CAPPED_SIZE_NUM_OBJ(type, num))
-#define m_del_var(obj_type, var_field, var_type, var_num, ptr) (m_free(ptr, CAPPED_SIZE_OBJ_NUM_VAR(offsetof(obj_type, var_field), var_type, var_num)))
+#define m_renew(type, ptr, old_num, new_num) ((type *)(m_realloc((ptr), sizeof(type) * old_num, mp_checked_mul(sizeof(type), new_num))))
+#define m_renew_maybe(type, ptr, old_num, new_num, allow_move) ((type *)(m_realloc_maybe((ptr), sizeof(type) * old_num, mp_checked_mul(sizeof(type), new_num), (allow_move))))
+#define m_del(type, ptr, num) m_free(ptr,  sizeof(type) * num)
+#define m_del_var(obj_type, var_field, var_type, var_num, ptr) (m_free(ptr, offsetof(obj_type, var_field) + sizeof(var_type) * var_num))
 #else
-#define m_renew(type, ptr, old_num, new_num) ((type *)(m_realloc((ptr), CAPPED_SIZE_NUM_OBJ(type, new_num))))
-#define m_renew_maybe(type, ptr, old_num, new_num, allow_move) ((type *)(m_realloc_maybe((ptr), CAPPED_SIZE_NUM_OBJ(type, new_num), (allow_move))))
+#define m_renew(type, ptr, old_num, new_num) ((type *)(m_realloc((ptr), mp_checked_mul(sizeof(type), new_num))))
+#define m_renew_maybe(type, ptr, old_num, new_num, allow_move) ((type *)(m_realloc_maybe((ptr), mp_checked_mul(sizeof(type), new_num), (allow_move))))
 #define m_del(type, ptr, num) ((void)(num), m_free(ptr))
 #define m_del_var(obj_type, var_field, var_type, var_num, ptr) ((void)(var_num), m_free(ptr))
 #endif
